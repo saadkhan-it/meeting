@@ -47,10 +47,11 @@
   <h1 style="margin-bottom:16px">Your Class Schedule</h1>
 
   <div class="card">
-    <label for="name">Full name</label>
-    <input id="name" autocomplete="name">
     <label for="reg">Registration number</label>
-    <input id="reg" autocapitalize="characters">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px;font-weight:600;margin-bottom:12px">BSE24</span>
+      <input id="reg" inputmode="numeric" maxlength="4" placeholder="1101">
+    </div>
   </div>
 
   <div class="card">
@@ -89,6 +90,11 @@
     <div class="card">
       <strong>Students</strong>
       <table class="list" id="studentList"></table>
+    </div>
+
+    <div class="card">
+      <strong id="missingTitle">Not submitted yet</strong>
+      <table class="list" id="missingList"></table>
     </div>
 
     <button class="danger" id="clearBtn" style="width:100%">Clear all entries</button>
@@ -144,8 +150,7 @@ const picked = new Set();
 function initStudent() {
   const saved = JSON.parse(localStorage.getItem("mySchedule") || "null");
   if (saved) {
-    document.getElementById("name").value = saved.name || "";
-    document.getElementById("reg").value = saved.reg || "";
+    document.getElementById("reg").value = (saved.reg || "").replace(/^BSE24/i, "");
     (saved.slots || []).forEach(k => picked.add(k));
   }
   const grid = document.getElementById("studentGrid");
@@ -161,23 +166,24 @@ function initStudent() {
 }
 
 async function saveStudent() {
-  const name = document.getElementById("name").value.trim();
-  const reg = document.getElementById("reg").value.trim().toUpperCase();
+  const digits = document.getElementById("reg").value.trim().replace(/^BSE24/i, "");
+  const reg = "BSE24" + digits;
   const msg = document.getElementById("studentMsg");
   const btn = document.getElementById("saveBtn");
   msg.className = "msg";
-  if (name.length < 2) { msg.textContent = "Please enter your name."; msg.classList.add("err"); return; }
-  if (reg.length < 3) { msg.textContent = "Please enter your registration number."; msg.classList.add("err"); return; }
+  if (!/^\d{4}$/.test(digits)) { msg.textContent = "Enter the last 4 digits of your registration number."; msg.classList.add("err"); return; }
   if (picked.size === 0 && !confirm("You have not selected any class. Save anyway?")) return;
 
   btn.disabled = true; btn.textContent = "Saving...";
   try {
-    await rpc("submit_schedule", { p_name: name, p_reg: reg, p_slots: [...picked] });
-    localStorage.setItem("mySchedule", JSON.stringify({ name, reg, slots: [...picked] }));
-    msg.textContent = "Saved. Thank you! You can open this link again to change it.";
+    const name = await rpc("submit_schedule", { p_reg: reg, p_slots: [...picked] });
+    localStorage.setItem("mySchedule", JSON.stringify({ reg, slots: [...picked] }));
+    msg.textContent = `Saved for ${name}. Thank you! You can open this link again to change it.`;
     msg.classList.add("ok");
   } catch (e) {
-    msg.textContent = "Could not save. Check your internet and try again.";
+    msg.textContent = e.message === "not in list"
+      ? `${reg} is not in the class list. Check your number.`
+      : "Could not save. Check your internet and try again.";
     msg.classList.add("err");
   }
   btn.disabled = false; btn.textContent = "Save";
@@ -239,6 +245,11 @@ async function loadAdmin() {
     rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.reg_no)}</td><td><button class="danger" data-reg="${esc(r.reg_no)}">Delete</button></td></tr>`).join("");
   document.getElementById("detail").innerHTML = "";
   document.getElementById("recs").innerHTML = "";
+
+  const missing = await rpc("get_missing", { p_pin: PIN }) || [];
+  document.getElementById("missingTitle").textContent = `Not submitted yet (${missing.length})`;
+  document.getElementById("missingList").innerHTML =
+    missing.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.reg_no)}</td></tr>`).join("");
 }
 
 function showDetail(key) {
