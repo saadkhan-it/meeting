@@ -80,6 +80,7 @@
   </div>
 
   <div id="adminBody" class="hidden">
+    <div class="msg err" id="adminMsg"></div>
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
         <strong id="countText"></strong>
@@ -160,7 +161,8 @@ function buildGrid(table, cellHtml) {
 const picked = new Set();
 
 function initStudent() {
-  const saved = JSON.parse(localStorage.getItem("mySchedule") || "null");
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem("mySchedule") || "null"); } catch (e) { saved = null; }
   if (saved) {
     document.getElementById("reg").value = (saved.reg || "").replace(/^BSE24/i, "");
     (saved.slots || []).forEach(k => picked.add(k));
@@ -189,7 +191,7 @@ async function saveStudent() {
   btn.disabled = true; btn.textContent = "Saving...";
   try {
     const name = await rpc("submit_schedule", { p_reg: reg, p_slots: [...picked] });
-    localStorage.setItem("mySchedule", JSON.stringify({ reg, slots: [...picked] }));
+    try { localStorage.setItem("mySchedule", JSON.stringify({ reg, slots: [...picked] })); } catch (e) {}
     msg.textContent = `Saved for ${name}. Thank you! You can open this link again to change it.`;
     msg.classList.add("ok");
   } catch (e) {
@@ -210,12 +212,12 @@ function initAdvisor() {
   document.getElementById("advisor").classList.remove("hidden");
   document.getElementById("pinBtn").addEventListener("click", openAdmin);
   document.getElementById("pin").addEventListener("keydown", e => { if (e.key === "Enter") openAdmin(); });
-  document.getElementById("refreshBtn").addEventListener("click", loadAdmin);
+  document.getElementById("refreshBtn").addEventListener("click", () => safe(loadAdmin));
   document.getElementById("recBtns").addEventListener("click", e => {
     const b = e.target.closest("button[data-day]");
     if (b) recommend(b.dataset.day);
   });
-  document.getElementById("clearBtn").addEventListener("click", clearAll);
+  document.getElementById("clearBtn").addEventListener("click", () => safe(clearAll));
   document.getElementById("adminGrid").addEventListener("click", e => {
     const b = e.target.closest(".cell");
     if (b) showDetail(b.dataset.key);
@@ -223,21 +225,43 @@ function initAdvisor() {
   document.getElementById("studentList").addEventListener("click", async e => {
     const b = e.target.closest("button[data-reg]");
     if (!b || !confirm("Delete this student's entry?")) return;
-    await rpc("delete_student", { p_pin: PIN, p_reg: b.dataset.reg });
-    loadAdmin();
+    safe(async () => {
+      await rpc("delete_student", { p_pin: PIN, p_reg: b.dataset.reg });
+      await loadAdmin();
+    });
   });
 }
 
+// Shows an error on the Advisor page if something fails (for example no internet).
+async function safe(fn) {
+  const msg = document.getElementById("adminMsg");
+  msg.textContent = "";
+  try { await fn(); }
+  catch (e) { msg.textContent = "Something went wrong. Check your internet and try again."; }
+}
+
 async function openAdmin() {
-  PIN = document.getElementById("pin").value.trim();
+  const pin = document.getElementById("pin").value.trim();
   const msg = document.getElementById("pinMsg");
+  const btn = document.getElementById("pinBtn");
+  msg.className = "msg err";
+  btn.disabled = true;
   try {
-    await loadAdmin();
-    document.getElementById("pinCard").classList.add("hidden");
-    document.getElementById("adminBody").classList.remove("hidden");
+    const status = await rpc("admin_login", { p_pin: pin });
+    if (status === "ok") {
+      PIN = pin;
+      await loadAdmin();
+      document.getElementById("pinCard").classList.add("hidden");
+      document.getElementById("adminBody").classList.remove("hidden");
+    } else if (status === "locked") {
+      msg.textContent = "Too many wrong tries. Try again in 10 minutes.";
+    } else {
+      msg.textContent = "Wrong PIN.";
+    }
   } catch (e) {
-    msg.textContent = "Wrong PIN."; msg.className = "msg err";
+    msg.textContent = "Could not connect. Check your internet and try again.";
   }
+  btn.disabled = false;
 }
 
 async function loadAdmin() {
@@ -256,8 +280,8 @@ async function loadAdmin() {
   });
 
   document.getElementById("studentList").innerHTML =
-    "<tr><th>Name</th><th>Reg no</th><th></th></tr>" +
-    rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.reg_no)}</td><td><button class="danger" data-reg="${esc(r.reg_no)}">Delete</button></td></tr>`).join("");
+    "<tr><th>Name</th><th>Reg no</th><th>Updated</th><th></th></tr>" +
+    rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.reg_no)}</td><td>${esc(when(r.updated_at))}</td><td><button class="danger" data-reg="${esc(r.reg_no)}">Delete</button></td></tr>`).join("");
   document.getElementById("detail").innerHTML = "";
   document.getElementById("recs").innerHTML = "";
 
@@ -265,6 +289,10 @@ async function loadAdmin() {
   document.getElementById("missingTitle").textContent = `Not submitted yet (${missing.length})`;
   document.getElementById("missingList").innerHTML =
     missing.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.reg_no)}</td></tr>`).join("");
+}
+
+function when(t) {
+  return new Date(t).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 function showDetail(key) {
