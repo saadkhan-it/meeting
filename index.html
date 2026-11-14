@@ -44,18 +44,17 @@
 
 <!-- STUDENT VIEW -->
 <section id="student">
-  <h1>Your Class Schedule</h1>
-  <p class="sub">Tap every slot where you have a class. Your Advisor will pick a time when most students are free.</p>
+  <h1 style="margin-bottom:16px">Your Class Schedule</h1>
 
   <div class="card">
     <label for="name">Full name</label>
-    <input id="name" autocomplete="name" placeholder="e.g. Muhammad Ali">
+    <input id="name" autocomplete="name">
     <label for="reg">Registration number</label>
-    <input id="reg" placeholder="e.g. BSE241101" autocapitalize="characters">
+    <input id="reg" autocapitalize="characters">
   </div>
 
   <div class="card">
-    <p class="legend">Blue = I have a class at this time</p>
+    <p class="legend">Tap the slots according to your classes schedules</p>
     <table class="grid" id="studentGrid"></table>
   </div>
 
