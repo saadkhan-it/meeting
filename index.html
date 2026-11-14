@@ -35,6 +35,10 @@
   .list td, .list th { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); }
   .list button { padding:6px 10px; font-size:13px; }
   .hidden { display:none; }
+  .regbox { display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; margin-bottom:12px; padding-left:12px; background:#fff; }
+  .regbox:focus-within { border-color:var(--busy); }
+  .regbox span { font-size:16px; color:var(--text); user-select:none; }
+  .regbox input { border:0; margin:0; padding:11px 12px 11px 0; outline:none; flex:1; min-width:0; }
   #detail { font-size:14px; }
   #detail b { display:block; margin-top:8px; }
 </style>
@@ -48,9 +52,9 @@
 
   <div class="card">
     <label for="reg">Registration number</label>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="font-size:16px;font-weight:600;margin-bottom:12px">BSE24</span>
-      <input id="reg" inputmode="numeric" maxlength="4" placeholder="1101">
+    <div class="regbox">
+      <span>BSE24</span>
+      <input id="reg" inputmode="numeric" maxlength="4" aria-label="Last 4 digits">
     </div>
   </div>
 
