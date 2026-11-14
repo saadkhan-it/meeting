@@ -152,7 +152,7 @@ function buildGrid(table, cellHtml) {
     html += `<tr><th class="time">${slotTime(s)}</th>`;
     DAYS.forEach((_, d) => { html += `<td>${cellHtml(`${d + 1}-${s + 1}`)}</td>`; });
     html += "</tr>";
-    if (s + 1 === BREAK_AFTER) html += `<tr class="break"><td colspan="6">Namaz break 12:51 to 1:20</td></tr>`;
+    if (s + 1 === BREAK_AFTER) html += `<tr class="break"><td colspan="6">Namaz break 12:50 to 1:20</td></tr>`;
   });
   table.innerHTML = html;
 }
