@@ -85,7 +85,15 @@
         <strong id="countText"></strong>
         <button class="ghost" id="refreshBtn">Refresh</button>
       </div>
-      <button class="primary" id="recBtn" style="margin:12px 0">Recommend meeting time</button>
+      <div style="margin:12px 0 8px;font-weight:600">Recommend meeting time</div>
+      <div class="row" id="recBtns" style="margin-bottom:12px">
+        <button class="ghost" data-day="0">Mon</button>
+        <button class="ghost" data-day="1">Tue</button>
+        <button class="ghost" data-day="2">Wed</button>
+        <button class="ghost" data-day="3">Thu</button>
+        <button class="ghost" data-day="4">Fri</button>
+        <button class="primary" data-day="week" style="width:auto">Whole week</button>
+      </div>
       <div id="recs"></div>
       <table class="grid" id="adminGrid"></table>
       <div id="detail"></div>
@@ -203,7 +211,10 @@ function initAdvisor() {
   document.getElementById("pinBtn").addEventListener("click", openAdmin);
   document.getElementById("pin").addEventListener("keydown", e => { if (e.key === "Enter") openAdmin(); });
   document.getElementById("refreshBtn").addEventListener("click", loadAdmin);
-  document.getElementById("recBtn").addEventListener("click", recommend);
+  document.getElementById("recBtns").addEventListener("click", e => {
+    const b = e.target.closest("button[data-day]");
+    if (b) recommend(b.dataset.day);
+  });
   document.getElementById("clearBtn").addEventListener("click", clearAll);
   document.getElementById("adminGrid").addEventListener("click", e => {
     const b = e.target.closest(".cell");
@@ -267,39 +278,44 @@ function showDetail(key) {
     `<div>Free (${free.length}): ${names(free)}</div>`;
 }
 
-// For each day: pick the slot where most remaining students are free, up to 3 meetings,
-// until everyone is covered. Then show the best 3 days.
-function recommend() {
+// For one day: pick the slot where most remaining students are free,
+// up to 3 meetings, until everyone is covered.
+function planForDay(d) {
+  let left = rows.slice();
+  const meetings = [];
+  while (left.length && meetings.length < 3) {
+    let best = null;
+    SLOTS.forEach((_, s) => {
+      const key = `${d + 1}-${s + 1}`;
+      if (meetings.some(m => m.key === key)) return;
+      const free = left.filter(r => !r.busy_slots.includes(key));
+      if (!best || free.length > best.free.length) best = { key, s, free };
+    });
+    if (!best || best.free.length === 0) break;
+    meetings.push(best);
+    left = left.filter(r => !best.free.includes(r));
+  }
+  meetings.sort((a, b) => a.s - b.s);
+  return { day: DAYS[d], meetings, covered: rows.length - left.length, left };
+}
+
+function planCard(p, label) {
+  const times = p.meetings.map(m => `${SLOTS[m.s].replace(" ", " to ")} (${m.free.length} students)`).join("<br>");
+  const missing = p.left.length ? `<div style="color:var(--bad)">Cannot attend: ${p.left.map(r => esc(r.name)).join(", ")}</div>` : "";
+  return `<div class="card" style="padding:12px;margin-bottom:8px">
+    <strong>${label}${p.day}</strong>
+    <div style="margin:4px 0">${times || "No free slot"}</div>
+    <div>${p.covered} of ${rows.length} students covered in ${p.meetings.length} meeting${p.meetings.length === 1 ? "" : "s"}</div>
+    ${missing}</div>`;
+}
+
+function recommend(which) {
   const box = document.getElementById("recs");
   if (rows.length === 0) { box.innerHTML = "<p>No students have submitted yet.</p>"; return; }
-  const plans = DAYS.map((day, d) => {
-    let left = rows.slice();
-    const meetings = [];
-    while (left.length && meetings.length < 3) {
-      let best = null;
-      SLOTS.forEach((_, s) => {
-        const key = `${d + 1}-${s + 1}`;
-        if (meetings.some(m => m.key === key)) return;
-        const free = left.filter(r => !r.busy_slots.includes(key));
-        if (!best || free.length > best.free.length) best = { key, s, free };
-      });
-      if (!best || best.free.length === 0) break;
-      meetings.push(best);
-      left = left.filter(r => !best.free.includes(r));
-    }
-    meetings.sort((a, b) => a.s - b.s);
-    return { day, meetings, covered: rows.length - left.length, left };
-  });
+  if (which !== "week") { box.innerHTML = planCard(planForDay(Number(which)), ""); return; }
+  const plans = DAYS.map((_, d) => planForDay(d));
   plans.sort((a, b) => b.covered - a.covered || a.meetings.length - b.meetings.length);
-  box.innerHTML = plans.slice(0, 3).map((p, i) => {
-    const times = p.meetings.map(m => `${SLOTS[m.s].split(" ")[0]} (${m.free.length} students)`).join(" + ");
-    const missing = p.left.length ? `<div style="color:var(--bad)">Cannot attend: ${p.left.map(r => esc(r.name)).join(", ")}</div>` : "";
-    return `<div class="card" style="padding:12px;margin-bottom:8px">
-      <strong>${i === 0 ? "Best: " : ""}${p.day}</strong>
-      <div>${times || "No free slot"}</div>
-      <div>${p.covered} of ${rows.length} students covered in ${p.meetings.length} meeting${p.meetings.length === 1 ? "" : "s"}</div>
-      ${missing}</div>`;
-  }).join("");
+  box.innerHTML = plans.map((p, i) => planCard(p, i === 0 ? "Best: " : "")).join("");
 }
 
 async function clearAll() {
