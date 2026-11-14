@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Class Schedule for Advisor Meeting</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1d2330; --muted:#6b7280; --line:#e3e6eb;
+          --busy:#2f5bd3; --free:#1f9d55; --warn:#d97706; --bad:#dc2626; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:4px 0 4px; }
+  p.sub { margin:0 0 16px; color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+  input { width:100%; padding:11px 12px; font-size:16px; border:1px solid var(--line); border-radius:8px; margin-bottom:12px; }
+  button { font:inherit; cursor:pointer; border:0; border-radius:8px; padding:12px 16px; font-size:15px; }
+  .primary { background:var(--busy); color:#fff; width:100%; font-weight:600; }
+  .primary:disabled { opacity:.6; }
+  .ghost { background:#eef1f6; color:var(--text); }
+  .danger { background:#fdecec; color:var(--bad); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  .grid { width:100%; border-collapse:separate; border-spacing:4px; table-layout:fixed; }
+  .grid th { font-size:12px; color:var(--muted); font-weight:600; padding:2px; }
+  .grid th.time { width:64px; text-align:left; line-height:1.2; }
+  .cell { height:44px; border-radius:8px; border:1px solid var(--line); background:#fff; font-size:12px; font-weight:600; user-select:none; padding:0; width:100%; }
+  .cell.on { background:var(--busy); border-color:var(--busy); color:#fff; }
+  .break td { text-align:center; font-size:12px; color:var(--muted); padding:4px; background:#fbf7ee; border-radius:8px; }
+  .msg { margin-top:12px; font-size:14px; min-height:20px; }
+  .msg.ok { color:var(--free); } .msg.err { color:var(--bad); }
+  .legend { font-size:13px; color:var(--muted); margin:0 0 8px; }
+  .heat { color:#fff; }
+  .list { width:100%; border-collapse:collapse; font-size:14px; }
+  .list td, .list th { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); }
+  .list button { padding:6px 10px; font-size:13px; }
+  .hidden { display:none; }
+  #detail { font-size:14px; }
+  #detail b { display:block; margin-top:8px; }
+</style>
+</head>
+<body>
+<main>
+
+<!-- STUDENT VIEW -->
+<section id="student">
+  <h1>Your Class Schedule</h1>
+  <p class="sub">Tap every slot where you have a class. Your Advisor will pick a time when most students are free.</p>
+
+  <div class="card">
+    <label for="name">Full name</label>
+    <input id="name" autocomplete="name" placeholder="e.g. Muhammad Ali">
+    <label for="reg">Registration number</label>
+    <input id="reg" placeholder="e.g. BSE241101" autocapitalize="characters">
+  </div>
+
+  <div class="card">
+    <p class="legend">Blue = I have a class at this time</p>
+    <table class="grid" id="studentGrid"></table>
+  </div>
+
+  <button class="primary" id="saveBtn">Save</button>
+  <div class="msg" id="studentMsg"></div>
+</section>
+
+<!-- ADVISOR VIEW -->
+<section id="advisor" class="hidden">
+  <h1>Advisor View</h1>
+  <p class="sub">See which slots are free for a meeting.</p>
+
+  <div class="card" id="pinCard">
+    <label for="pin">PIN</label>
+    <input id="pin" type="password" inputmode="numeric" placeholder="Enter PIN">
+    <button class="primary" id="pinBtn">Open</button>
+    <div class="msg" id="pinMsg"></div>
+  </div>
+
+  <div id="adminBody" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <strong id="countText"></strong>
+        <button class="ghost" id="refreshBtn">Refresh</button>
+      </div>
+      <p class="legend" style="margin-top:8px">Number = students who have class. Green = everyone free. Tap a slot to see names.</p>
+      <table class="grid" id="adminGrid"></table>
+      <div id="detail"></div>
+    </div>
+
+    <div class="card">
+      <strong>Students</strong>
+      <table class="list" id="studentList"></table>
+    </div>
+
+    <button class="danger" id="clearBtn" style="width:100%">Clear all entries</button>
+  </div>
+</section>
+
+</main>
+
+<script>
+const SUPABASE_URL = "https://syjxhawtmwhulhkmqriu.supabase.co";
+const SUPABASE_KEY = "sb_publishable_w3pGYvgOxUX2_ugeiTN0TA_gwpmuRgm";
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const SLOTS = [
+  "8:00 8:50", "9:00 9:50", "10:00 10:50", "11:00 11:50", "12:00 12:50",
+  "1:20 2:10", "2:20 3:10", "3:20 4:10", "4:20 5:10"
+];
+const BREAK_AFTER = 5; // namaz break after slot 5
+
+async function rpc(fn, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) throw new Error((data && data.message) || "Request failed");
+  return data;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+
+function slotTime(i) { return SLOTS[i].replace(" ", "<br>"); }
+
+// Builds the grid. cellHtml(key) returns the inner button for each day/slot.
+function buildGrid(table, cellHtml) {
+  let html = "<tr><th class='time'></th>" + DAYS.map(d => `<th>${d}</th>`).join("") + "</tr>";
+  SLOTS.forEach((_, s) => {
+    html += `<tr><th class="time">${slotTime(s)}</th>`;
+    DAYS.forEach((_, d) => { html += `<td>${cellHtml(`${d + 1}-${s + 1}`)}</td>`; });
+    html += "</tr>";
+    if (s + 1 === BREAK_AFTER) html += `<tr class="break"><td colspan="6">Namaz break 12:51 to 1:20</td></tr>`;
+  });
+  table.innerHTML = html;
+}
+
+/* ---------- Student ---------- */
+const picked = new Set();
+
+function initStudent() {
+  const saved = JSON.parse(localStorage.getItem("mySchedule") || "null");
+  if (saved) {
+    document.getElementById("name").value = saved.name || "";
+    document.getElementById("reg").value = saved.reg || "";
+    (saved.slots || []).forEach(k => picked.add(k));
+  }
+  const grid = document.getElementById("studentGrid");
+  buildGrid(grid, key => `<button class="cell ${picked.has(key) ? "on" : ""}" data-key="${key}" aria-label="slot ${key}"></button>`);
+  grid.addEventListener("click", e => {
+    const b = e.target.closest(".cell");
+    if (!b) return;
+    const k = b.dataset.key;
+    picked.has(k) ? picked.delete(k) : picked.add(k);
+    b.classList.toggle("on");
+  });
+  document.getElementById("saveBtn").addEventListener("click", saveStudent);
+}
+
+async function saveStudent() {
+  const name = document.getElementById("name").value.trim();
+  const reg = document.getElementById("reg").value.trim().toUpperCase();
+  const msg = document.getElementById("studentMsg");
+  const btn = document.getElementById("saveBtn");
+  msg.className = "msg";
+  if (name.length < 2) { msg.textContent = "Please enter your name."; msg.classList.add("err"); return; }
+  if (reg.length < 3) { msg.textContent = "Please enter your registration number."; msg.classList.add("err"); return; }
+  if (picked.size === 0 && !confirm("You have not selected any class. Save anyway?")) return;
+
+  btn.disabled = true; btn.textContent = "Saving...";
+  try {
+    await rpc("submit_schedule", { p_name: name, p_reg: reg, p_slots: [...picked] });
+    localStorage.setItem("mySchedule", JSON.stringify({ name, reg, slots: [...picked] }));
+    msg.textContent = "Saved. Thank you! You can open this link again to change it.";
+    msg.classList.add("ok");
+  } catch (e) {
+    msg.textContent = "Could not save. Check your internet and try again.";
+    msg.classList.add("err");
+  }
+  btn.disabled = false; btn.textContent = "Save";
+}
+
+/* ---------- Advisor ---------- */
+let PIN = "";
+let rows = [];
+
+function initAdvisor() {
+  document.getElementById("student").classList.add("hidden");
+  document.getElementById("advisor").classList.remove("hidden");
+  document.getElementById("pinBtn").addEventListener("click", openAdmin);
+  document.getElementById("pin").addEventListener("keydown", e => { if (e.key === "Enter") openAdmin(); });
+  document.getElementById("refreshBtn").addEventListener("click", loadAdmin);
+  document.getElementById("clearBtn").addEventListener("click", clearAll);
+  document.getElementById("adminGrid").addEventListener("click", e => {
+    const b = e.target.closest(".cell");
+    if (b) showDetail(b.dataset.key);
+  });
+  document.getElementById("studentList").addEventListener("click", async e => {
+    const b = e.target.closest("button[data-reg]");
+    if (!b || !confirm("Delete this student's entry?")) return;
+    await rpc("delete_student", { p_pin: PIN, p_reg: b.dataset.reg });
+    loadAdmin();
+  });
+}
+
+async function openAdmin() {
+  PIN = document.getElementById("pin").value.trim();
+  const msg = document.getElementById("pinMsg");
+  try {
+    await loadAdmin();
+    document.getElementById("pinCard").classList.add("hidden");
+    document.getElementById("adminBody").classList.remove("hidden");
+  } catch (e) {
+    msg.textContent = "Wrong PIN."; msg.className = "msg err";
+  }
+}
+
+async function loadAdmin() {
+  rows = await rpc("get_schedules", { p_pin: PIN }) || [];
+  const total = rows.length;
+  document.getElementById("countText").textContent = `${total} student${total === 1 ? "" : "s"} submitted`;
+
+  const count = {};
+  rows.forEach(r => r.busy_slots.forEach(k => count[k] = (count[k] || 0) + 1));
+
+  buildGrid(document.getElementById("adminGrid"), key => {
+    const n = count[key] || 0;
+    let bg;
+    if (total === 0 || n === 0) bg = "var(--free)";
+    else { const p = n / total; bg = p <= 0.15 ? "#65a30d" : p <= 0.4 ? "var(--warn)" : "var(--bad)"; }
+    return `<button class="cell heat" style="background:${bg};border-color:${bg}" data-key="${key}">${n === 0 ? "Free" : n}</button>`;
+  });
+
+  document.getElementById("studentList").innerHTML =
+    "<tr><th>Name</th><th>Reg no</th><th></th></tr>" +
+    rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.reg_no)}</td><td><button class="danger" data-reg="${esc(r.reg_no)}">Delete</button></td></tr>`).join("");
+  document.getElementById("detail").innerHTML = "";
+}
+
+function showDetail(key) {
+  const [d, s] = key.split("-").map(Number);
+  const busy = rows.filter(r => r.busy_slots.includes(key));
+  const free = rows.filter(r => !r.busy_slots.includes(key));
+  const names = list => list.length ? list.map(r => esc(r.name) + " (" + esc(r.reg_no) + ")").join(", ") : "None";
+  document.getElementById("detail").innerHTML =
+    `<b>${DAYS[d - 1]} ${SLOTS[s - 1].replace(" ", " to ")}</b>` +
+    `<div>Have class (${busy.length}): ${names(busy)}</div>` +
+    `<div>Free (${free.length}): ${names(free)}</div>`;
+}
+
+async function clearAll() {
+  if (!confirm("Delete ALL student entries? This cannot be undone.")) return;
+  await rpc("clear_all", { p_pin: PIN });
+  loadAdmin();
+}
+
+/* ---------- Start ---------- */
+if (new URLSearchParams(location.search).has("admin")) initAdvisor();
+else initStudent();
+</script>
+</body>
+</html>
